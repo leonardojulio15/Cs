@@ -1,0 +1,57 @@
+name: Gerar APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Localizar projeto
+        run: |
+          for z in *.zip; do [ -f "$z" ] && unzip -o -q "$z"; done
+          F=$(find . -name settings.gradle.kts -not -path "*/.git/*" | head -1)
+          if [ -z "$F" ]; then
+            echo "::error::Projeto nao encontrado. Envie o ConsumoAuto.zip para o repositorio."
+            ls -la
+            exit 1
+          fi
+          P=$(dirname "$F")
+          echo "PROJ=$P" >> $GITHUB_ENV
+          sed -i 's/androidx.car.app.category.POI/androidx.car.app.category.IOT/' "$P/app/src/main/AndroidManifest.xml"
+          sed -i 's/versionCode = 1$/versionCode = 2/; s/versionName = "1.0"/versionName = "1.1"/' "$P/app/build.gradle.kts"
+          grep -n "car.app.category" "$P/app/src/main/AndroidManifest.xml"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar APK
+        working-directory: ${{ env.PROJ }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Renomear APK
+        run: cp "${{ env.PROJ }}/app/build/outputs/apk/debug/app-debug.apk" ConsumoAuto.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ConsumoAuto-apk
+          path: ConsumoAuto.apk
+
+      - name: Publicar para download no celular
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Consumo Auto ${{ github.run_number }}
+          files: ConsumoAuto.apk
